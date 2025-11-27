@@ -3,22 +3,25 @@ all:
     ansible_user: root
     ansible_python_interpreter: /usr/bin/python3
   hosts:
-    krishnanode1.infra.alephys.com:
-      ansible_host: 10.1.14.174
-    krishnanode2.infra.alephys.com:
-      ansible_host: 10.1.14.223
-    krishnanode3.infra.alephys.com:
-      ansible_host: 10.1.14.165
+    node1<host dns>:
+      ansible_host: 0.0.0.0 
+      # node1 host ip
+    node2<host dns>:
+      ansible_host: 0.0.0.0 
+      # node2 host ip
+    node3<host dns>:
+      ansible_host: 0.0.0.0 
+      # node3 host ip
 
   children:
     prometheus_server:
       hosts:
-        krishnanode1.infra.alephys.com:
-        krishnanode2.infra.alephys.com:
-        krishnanode3.infra.alephys.com:
+        node1<host dns>:
+        node2<host dns>:
+        node3<host dns>:
     node_exporters:
       hosts:
-        krishnanode1.infra.alephys.com:
-        krishnanode2.infra.alephys.com:
-        krishnanode3.infra.alephys.com:
+        node1<host dns>:
+        node2<host dns>:
+        node3<host dns>:
 
