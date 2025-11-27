@@ -1,0 +1,101 @@
+# Prometheus Ansible Setup  
+_(Monitoring Automation for Cloudera Private Cluster)_
+
+##  Overview
+
+This Ansible project automates the installation and configuration of **Prometheus** and **Node Exporter** for monitoring Linux hosts in a **Cloudera Private Cluster** environment.
+
+It is part of the repository:
+**cloudera_private_cluster_ansible**
+
+The goal of this module is to provide a consistent, repeatable, and enterprise-ready way to deploy infrastructure monitoring alongside Cloudera clusters.
+
+---
+
+##  What This Setup Provides
+
+- Automated deployment of **Prometheus Server**
+- Installation and management of **node_exporter** on cluster nodes
+- Systemd-based service management
+- Centralized metrics collection
+- Easy extensibility for additional exporters (JMX, Hadoop, Kafka, etc.)
+
+---
+
+##  Directory Structure (Logical View)
+  prometheus-ansible/
+├── hosts/ # Inventory files (cluster nodes)
+├── group_vars/ # Group-level configuration
+├── playbooks/ # Prometheus and exporter playbooks
+├── templates/ # prometheus.yml and service templates
+└── README.md
+
+
+---
+
+##  Prerequisites
+
+- Ansible version: **2.9+**
+- Passwordless SSH access from control node
+- sudo privileges on target servers
+- Linux hosts (RHEL / CentOS / Rocky / compatible)
+- Network connectivity between Prometheus server and cluster nodes
+
+---
+
+##  How to Run
+
+1. Clone the repository:
+
+   ```bash
+   git clone https://github.com/tejs3/cloudera_private_cluster_ansible.git
+   cd cloudera_private_cluster_ansible/prometheus-ansible
+
+
+Update inventory files under hosts/.
+
+Review or update configurations under group_vars/.
+
+Execute the playbook:
+
+ansible-playbook -i hosts/<inventory-file> playbooks/prometheus.yml --become
+
+
+Verify:
+
+Prometheus service is running
+
+node_exporter is running on all nodes
+
+Prometheus UI is accessible on port 9090
+
+ Official Prometheus Ansible Resources
+
+This project aligns with the Prometheus Community Ansible Collection, which provides production-grade roles and best practices.
+
+ GitHub – Prometheus Community Roles
+
+Official source for all Prometheus-related Ansible roles:
+
+ https://github.com/prometheus-community/ansible/tree/main/roles
+
+Includes roles for:
+
+Prometheus Server
+
+Node Exporter
+
+Alertmanager
+
+Additional exporters
+
+ Ansible Galaxy – Prometheus Collection
+
+Collection Name:
+prometheus.prometheus
+
+ https://galaxy.ansible.com/prometheus/prometheus
+
+ Install the Collection (Copy Command)
+ansible-galaxy collection install prometheus.prometheus
+
