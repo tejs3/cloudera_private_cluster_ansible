@@ -1,0 +1,97 @@
+# Grafana Ansible Setup  
+_(Dashboard & Visualization Automation for Cloudera Private Cluster)_
+
+##  Overview
+
+This Ansible module automates the installation and configuration of **Grafana** for a **Cloudera Private Cluster** environment.
+
+In addition to installing Grafana, **this playbook also automatically creates a Node Exporter dashboard** using Grafana provisioning — no manual dashboard import is required.
+
+This module is part of the repository:  
+**cloudera_private_cluster_ansible**
+
+---
+
+##  What This Setup Provides
+
+- Automated installation of **Grafana server**
+- Systemd-based service configuration
+- Automatic creation of **Node Exporter dashboard** via this playbook
+- Integration with Prometheus as a data source
+- Repeatable, idempotent Grafana deployment
+- Suitable for Hadoop / Cloudera infrastructure monitoring
+
+---
+
+##  Directory Structure (Logical View)
+
+grafana_ansible/
+├── hosts/ # Inventory files for Grafana host(s)
+├── group_vars/ # Grafana configuration variables
+├── playbooks/ # Grafana installation & provisioning playbooks
+└── README.md
+
+yaml
+Copy code
+
+---
+
+##  Prerequisites
+
+- Ansible **2.9+**
+- SSH access to target host(s)
+- sudo privileges
+- Linux-based OS (RHEL / CentOS / Rocky / Ubuntu compatible)
+- Prometheus server already running (recommended)
+- node_exporter running on monitored hosts
+
+---
+
+##  How to Run
+
+1. Clone the repository:
+
+   ```bash
+   git clone https://github.com/tejs3/cloudera_private_cluster_ansible.git
+   cd cloudera_private_cluster_ansible/grafana_ansible
+Update inventory file under hosts/.
+
+Adjust variables under group_vars/ if required (Grafana port, admin creds, datasource URL, etc.).
+
+Execute the playbook:
+
+bash
+Copy code
+ansible-playbook -i hosts/<inventory-file> playbooks/grafana.yml --become
+After successful execution:
+
+Grafana service will be running
+
+Prometheus will be configured as a datasource
+
+Node Exporter dashboard will be automatically created
+
+Grafana UI accessible on port 3000
+
+ Node Exporter Dashboard
+ The Node Exporter dashboard is created automatically by this playbook
+ No manual JSON import required
+ Uses Grafana provisioning mechanism
+ Visualizes CPU, memory, disk, network metrics from Prometheus
+
+This ensures consistency across environments and avoids manual Grafana setup steps.
+
+ Grafana Ansible Collection (Used in This Project)
+This project uses the official Grafana Ansible Collection, which provides production-ready roles and best practices.
+
+ GitHub – Grafana Ansible Collection
+ https://github.com/grafana/grafana-ansible-collection
+
+ Ansible Galaxy – Grafana Collection
+Collection Name:
+grafana.grafana
+
+ https://galaxy.ansible.com/grafana/grafana
+
+ Install the Collection (Copy Command)
+ansible-galaxy collection install grafana.grafana
