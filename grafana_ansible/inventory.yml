@@ -4,11 +4,11 @@ all:
     ansible_python_interpreter: /usr/bin/python3
 
   hosts:
-    krishnanode1.infra.alephys.com:
-      ansible_host: 10.1.14.174
+    node1<dns>:
+      ansible_host: node1<host ip>
 
   children:
     grafana_server:
       hosts:
-        krishnanode1.infra.alephys.com:
+        node1<dns>:
 
