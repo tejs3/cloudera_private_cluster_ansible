@@ -1,0 +1,177 @@
+Here’s a **single-file `README.md`** you can put in:
+
+`cloudera_private_cluster_ansible/cdp_private_cloud_installation/README.md`
+
+---
+
+````markdown
+# CDP Private Cloud Installation – Ansible Automation  
+_(Cloudera Private Cloud Base / On-Prem Cluster Setup)_
+
+##  Overview
+
+This Ansible module automates the **end-to-end installation of a CDP Private Cloud Base (Cloudera on-prem) cluster**.
+
+The goal is to provide a **repeatable, step-by-step installation** of a Cloudera cluster using Ansible, instead of doing all steps manually on each node.
+
+Typical flow handled by this code:
+
+1. OS & package **prerequisites** on all nodes  
+2. **PostgreSQL** installation & CDP databases on the master node  
+3. **Cloudera Manager Agent** installation on all nodes  
+4. **Cloudera Manager Server** installation on the master node  
+5. **PostgreSQL JDBC connector** on the master node  
+6. (Optional) Initial cluster bootstrap via Cloudera Manager / CM API
+
+This module lives inside the repo:
+
+**cloudera_private_cluster_ansible/cdp_private_cloud_installation**
+
+---
+
+##  Directory Structure (Logical View)
+
+> Adapt this section to your exact folder names if needed.
+
+```text
+cdp_private_cloud_installation/
+├── hosts/                     # Ansible inventory (all cluster nodes)
+├── group_vars/                # Global / group variables (versions, paths, etc.)
+    └──  all.yml
+├── cdp_install.yml            # Main playbook orchestrating all steps
+└── README.md
+````
+
+---
+
+##  What This Playbook Automates
+
+* Common OS prerequisites (packages, users, sysctl, limits, etc.)
+* PostgreSQL installation and basic configuration on the **master node**
+* Creation of Cloudera-related databases and users (e.g. for Cloudera Manager, services)
+* Installation & configuration of **Cloudera Manager Agent** on all cluster nodes
+* Installation & configuration of **Cloudera Manager Server** on the master node
+* Deployment of the **PostgreSQL JDBC connector** on the master node
+* Orchestrated flow in a **single playbook** (`cdp_install.yml`)
+
+> Exact details depend on how each role is implemented, but this is the intended design.
+
+---
+
+##  Prerequisites
+
+Before running `cdp_install.yml`, ensure:
+
+* You have **Ansible** installed on the control node.
+* SSH access (preferably key-based) from control node → all cluster nodes.
+* All nodes are running a supported **Linux** (RHEL / CentOS / Rocky or similar).
+* You have appropriate **sudo** privileges on all nodes.
+* You have access to required **Cloudera repositories / parcels / binaries** (local or internet).
+* Network connectivity between:
+
+  * Master node ↔ all worker nodes
+  * Cluster nodes ↔ PostgreSQL master
+  * Cluster nodes ↔ Cloudera Manager server
+
+---
+
+##  How to Run
+
+1. **Clone the repository** and go to this module:
+
+   ```bash
+   git clone https://github.com/tejs3/cloudera_private_cluster_ansible.git
+   cd cloudera_private_cluster_ansible/cdp_private_cloud_installation
+   ```
+
+2. **Edit the inventory** under `hosts/`
+   Define:
+
+   * Master / Cloudera Manager node
+   * Worker / data nodes
+   * Any groups you use in roles (e.g. `cm_server`, `cm_agents`, `database`)
+
+3. **Update variables** under `group_vars/`
+   For example:
+
+   * CDP/Cloudera versions
+   * PostgreSQL settings (port, data dir, db names, users)
+   * Repository URLs or local paths for Cloudera packages
+   * JVM / heap / service configuration paths
+
+4. **Run the main playbook**:
+
+   ```bash
+   ansible-playbook -i hosts/<inventory-file> cdp_install.yml --become
+   ```
+
+5. Once completed, open **Cloudera Manager** (typically on port `7180` or `7183`):
+
+   ```text
+   http://<cm-server-host>:7180
+   ```
+
+   From there you can:
+
+   * Add hosts (if not automated)
+   * Distribute and activate parcels
+   * Create and start CDP services (HDFS, YARN, HBase, etc.)
+
+---
+
+##  Playbook Flow (High-Level)
+
+The `cdp_install.yml` playbook is intended to run in an ordered sequence, for example:
+
+1. **Prereqs role**
+
+   * Install base packages
+   * Configure limits, sysctl, kernel params
+   * Create required users/groups (e.g. `cloudera-scm`)
+
+2. **PostgreSQL role** (master node)
+
+   * Install PostgreSQL
+   * Initialize DB cluster
+   * Create Cloudera databases and users
+
+3. **Cloudera Manager Agent role**
+
+   * Install agent on all nodes
+   * Point agents to Cloudera Manager server
+
+4. **Cloudera Manager Server role** (master node)
+
+   * Install CM server packages
+   * Configure server to use PostgreSQL
+   * Start Cloudera Manager server
+
+5. **JDBC Connector role** (master node)
+
+   * Download / place PostgreSQL JDBC driver
+   * Ensure Cloudera Manager can connect to DB
+
+6. (Optional) **Cluster bootstrap / CM API tasks**
+
+   * Use CM API to create/initialize a cluster automatically
+
+---
+
+##  Customization
+
+You can extend or customize this framework to:
+
+* Add roles for:
+
+  * Parcel distribution and activation
+  * Service creation (HDFS, YARN, HBase, Kafka, etc.)
+  * Security (Kerberos, TLS, Ranger, etc.)
+* Parameterize:
+
+  * Environment (dev / test / prod)
+  * Ports and directories
+  * JVM heap sizes
+* Integrate with:
+
+  * Prometheus / Grafana monitoring (using your other Ansible modules)
+  * External DNS, NTP, LDAP/FreeIPA, etc.
