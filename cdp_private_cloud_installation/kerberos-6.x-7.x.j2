@@ -1,0 +1,105 @@
+# CORE SETTINGS
+CORE_SETTINGS:
+  SERVICEWIDE:
+    hadoop_secure_web_ui: true
+    hadoop_security_authentication: kerberos
+    hadoop_security_authorization: true
+
+# HDFS
+HDFS:
+  SERVICEWIDE:
+    dfs_namenode_acls_enabled: true
+    hadoop_secure_web_ui: true
+    hadoop_security_authorization: true
+    hadoop_security_authentication: kerberos
+
+{% if not cluster.security.tls | default(false) %}
+
+DATANODE:
+   dfs_datanode_port: 1004
+   dfs_datanode_http_port: 1006
+{% endif %}
+
+{% if not cluster.security.tls | default(false) %}
+hdfs-DATANODE:
+   dfs_datanode_port: 1004
+   dfs_datanode_http_port: 1006
+{% endif %}
+
+# HBASE
+HBASE:
+  SERVICEWIDE:
+    hbase_restserver_security_authentication: kerberos
+    hbase_security_authentication: kerberos
+    hbase_security_authorization: true
+    hbase_thriftserver_security_authentication: auth-conf
+
+# KAFKA
+KAFKA:
+  SERVICEWIDE:
+    kerberos.auth.enable: true
+
+# KS INDEXER
+KS_INDEXER:
+  SERVICEWIDE:
+    hbase_indexer_security_authentication: kerberos
+
+# SOLR Infra
+INFRA_SOLR:
+  SERVICEWIDE:
+    solr_security_authentication: kerberos
+
+# YARN
+YARN:
+  SERVICEWIDE:
+    hadoop_secure_web_ui: true
+
+# ZOOKEEPER
+ZOOKEEPER:
+  SERVICEWIDE:
+    enableSecurity: true
+    quorum_auth_enable_sasl: true
+
+# SPARK ON YARN
+SPARK_ON_YARN:
+  SERVICEWIDE:
+    spark_authenticate: true
+
+SPARK3_ON_YARN:
+  SERVICEWIDE:
+    spark_authenticate: true
+
+SPARK_YARN_HISTORY_SERVER:
+  SERVICEWIDE:
+    history_server_spnego_enabled: true
+
+# GATEWAY
+GATEWAY:
+  SERVICEWIDE:
+    spark_io_encryption_enabled: true
+    spark_network_encryption_enabled: true
+
+# FLINK
+FLINK:
+  SERVICEWIDE:
+    kerberos.auth.enabled: true
+
+# NIFI
+NIFI:
+  SERVICEWIDE:
+    kerberos.auth.enabled: true
+
+# NIFIREGISTRY
+NIFIREGISTRY:
+  SERVICEWIDE:
+    kerberos.auth.enabled: true
+
+# QUEUEMANAGER
+QUEUEMANAGER:
+  SERVICEWIDE:
+    kerberos.auth.enabled: true
+
+# knox
+KNOX:
+  SERVICEWIDE:
+    kerberos.auth.enabled: true

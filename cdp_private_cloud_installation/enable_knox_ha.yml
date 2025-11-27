@@ -1,0 +1,164 @@
+---
+- name: Enable Knox Gateway HA using CM REST API
+  hosts: cloudera_manager
+  gather_facts: no
+
+  vars:
+    cm_user: "{{ cloudera_manager_admin_username }}"
+    cm_pass: "{{ cloudera_manager_admin_password }}"
+    cm_host: "{{ inventory_hostname }}"
+    cm_port: 7183
+    validate_certs: false
+
+  tasks:
+
+    #####################################################################
+    # 1. GET HOSTS → hostname + hostId + cluster name
+    #####################################################################
+    - name: Fetch CM host list
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v40/hosts"
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        return_content: yes
+      register: host_data
+
+    - name: Build CM hosts list
+      set_fact:
+        cm_hosts: "{{ cm_hosts | default([]) + [{
+            'hostname': item.hostname,
+            'hostId': item.hostId
+        }] }}"
+      loop: "{{ host_data.json['items'] }}"
+
+    - name: Extract cluster name
+      set_fact:
+        cluster_name: "{{ host_data.json['items'][0].clusterRef.clusterName }}"
+
+    - debug:
+        msg:
+          - "Cluster Name → {{ cluster_name }}"
+          - "Detected Hosts → {{ cm_hosts }}"
+
+    #####################################################################
+    # 2. GET KNOX ROLES
+    #####################################################################
+    - name: Fetch Knox roles
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/knox/roles"
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        return_content: yes
+      register: knox_roles
+
+    - name: Build Knox roles list
+      set_fact:
+        knox_roles_list: "{{ knox_roles_list | default([]) + [{
+            'roleName': item.name,
+            'roleType': item.type,
+            'hostname': item.hostRef.hostname,
+            'hostId': item.hostRef.hostId
+        }] }}"
+      loop: "{{ knox_roles.json['items']}}"
+
+    #####################################################################
+    # 3. FIND ACTIVE KNOX GATEWAY
+    #####################################################################
+    - name: Identify active Knox Gateway
+      set_fact:
+        active_knox_role: "{{ item.roleName }}"
+        active_knox_hostId: "{{ item.hostId }}"
+      loop: "{{ knox_roles_list }}"
+      when: item.roleType == "KNOX_GATEWAY"
+
+    - debug:
+        msg:
+          - "Active Knox Gateway Role → {{ active_knox_role }}"
+          - "Active Knox Gateway HostId → {{ active_knox_hostId }}"
+
+    #####################################################################
+    # 4. CHOOSE HOST FOR STANDBY GATEWAY
+    #####################################################################
+    - name: Pick different host for Standby Knox Gateway
+      set_fact:
+        standby_knox_host: "{{ item }}"
+      loop: "{{ cm_hosts }}"
+      when: item.hostId != active_knox_hostId
+
+    - name: Set standby Knox HostId
+      set_fact:
+        standby_knox_hostId: "{{ standby_knox_host.hostId }}"
+
+    - debug:
+        msg: "Standby Knox Gateway will be created on hostId → {{ standby_knox_hostId }}"
+
+    #####################################################################
+    # 5. STOP KNOX SERVICE
+    #####################################################################
+    - name: Stop Knox service
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/knox/commands/stop"
+        method: POST
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+      register: stop_knox_output
+
+    - debug:
+        msg: "Knox Stop Command Submitted → ID={{ stop_knox_output.json.id }}"
+
+    #####################################################################
+    # 6. CREATE STANDBY KNOX GATEWAY ROLE
+    #####################################################################
+    - name: Add new KNOX_GATEWAY role for Standby
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/knox/roles"
+        method: POST
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        body_format: json
+        body:
+          items:
+            - type: "KNOX_GATEWAY"
+              hostRef:
+                hostId: "{{ standby_knox_hostId }}"
+      register: create_knox_output
+
+    - name: Extract standby Knox role name
+      set_fact:
+        standby_knox_role: "{{ create_knox_output.json['items'][0].name }}"
+
+    - debug:
+        msg:
+          - "Standby Knox Gateway created → {{ standby_knox_role }}"
+
+    #####################################################################
+    # 7. Knox HA info (no HA flag required)
+    #####################################################################
+    - name: Knox HA mode information
+      debug:
+        msg: "Knox HA is automatically enabled when multiple Knox Gateway roles exist."
+
+    #####################################################################
+    # 8. START KNOX SERVICE
+    #####################################################################
+    - name: Start Knox service
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/knox/commands/start"
+        method: POST
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+      register: start_knox_output
+
+    - debug:
+        msg: "Knox Start Command Submitted → ID={{ start_knox_output.json.id }}"
+

@@ -1,0 +1,277 @@
+---
+- name: Enable HiveServer2 HA using CM REST API
+  hosts: cloudera_manager
+  gather_facts: no
+
+  vars:
+    cm_user: "{{ cloudera_manager_admin_username }}"
+    cm_pass: "{{ cloudera_manager_admin_password }}"
+    cm_host: "{{ inventory_hostname }}"
+    cm_port: 7183
+
+  tasks:
+    #####################################################################
+    # 1. GET HOST LIST
+    #####################################################################
+    - name: Fetch CM host list
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v40/hosts"
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        return_content: yes
+      register: host_data
+
+    - name: Build CM hosts list
+      set_fact:
+        cm_hosts: "{{ cm_hosts | default([]) + [{
+            'hostname': item.hostname,
+            'hostId': item.hostId
+        }] }}"
+      loop: "{{ host_data.json['items'] }}"
+
+    - name: Extract cluster name
+      set_fact:
+        cluster_name: "{{ host_data.json['items'][0].clusterRef.clusterName }}"
+
+    #####################################################################
+    # 2. GET HIVE ROLES
+    #####################################################################
+    - name: Fetch Hive roles
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/hive_on_tez/roles"
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        return_content: yes
+      register: hive_roles
+
+    - name: Build Hive roles list
+      set_fact:
+        hive_roles_list: "{{ hive_roles_list | default([]) + [{
+            'roleName': item.name,
+            'roleType': item.type,
+            'hostname': item.hostRef.hostname,
+            'hostId': item.hostRef.hostId
+        }] }}"
+      loop: "{{ hive_roles.json['items'] }}"
+
+    #####################################################################
+    # 3. IDENTIFY ACTIVE HIVE SERVER2
+    #####################################################################
+    - name: Find current HiveServer2 role
+      set_fact:
+        active_hs2_role: "{{ item.roleName }}"
+        active_hs2_hostId: "{{ item.hostId }}"
+      loop: "{{ hive_roles_list }}"
+      when: item.roleType == "HIVESERVER2"
+
+    #####################################################################
+    # 4. SELECT A DIFFERENT HOST FOR STANDBY HS2
+    #####################################################################
+    - name: Pick different host for Standby HS2
+      set_fact:
+        standby_hs2_host: "{{ item }}"
+      loop: "{{ cm_hosts }}"
+      when: item.hostId != active_hs2_hostId
+
+    - name: Set standby HS2 HostId
+      set_fact:
+        standby_hs2_hostId: "{{ standby_hs2_host.hostId }}"
+
+    #####################################################################
+    # 5. STOP HIVE SERVICE
+    #####################################################################
+    - name: Stop Hive service
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/hive_on_tez/commands/stop"
+        method: POST
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+      register: stop_hive_output
+
+    #####################################################################
+    # 6. CREATE STANDBY HIVESERVER2 ROLE
+    #####################################################################
+    - name: Add new HiveServer2 role on standby host
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/hive_on_tez/roles"
+        method: POST
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        body_format: json
+        body:
+          items:
+            - type: "HIVESERVER2"
+              hostRef:
+                hostId: "{{ standby_hs2_hostId }}"
+      register: create_hs2_output
+
+    - name: Extract standby HS2 role
+      set_fact:
+        standby_hs2_role: "{{ create_hs2_output.json['items'][0].name }}"
+
+    #####################################################################
+    # 7. ENABLE HIVE HA SETTINGS
+    #####################################################################
+    - name: HiveServer2 HA information
+      debug:
+        msg: "HiveServer2 HA is automatically enabled when multiple HS2 roles exist in Hive-on-Tez."
+
+    #####################################################################
+    # 8. START HIVE SERVICE
+    #####################################################################
+    - name: Start Hive service
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/hive_on_tez/commands/start"
+        method: POST
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+      register: start_hive_output
+
+---
+- name: Enable HiveServer2 HA using CM REST API
+  hosts: cloudera_manager
+  gather_facts: no
+
+  vars:
+    cm_user: "{{ cloudera_manager_admin_username }}"
+    cm_pass: "{{ cloudera_manager_admin_password }}"
+    cm_host: "{{ inventory_hostname }}"
+    cm_port: 7183
+
+  tasks:
+    #####################################################################
+    # 1. GET HOST LIST
+    #####################################################################
+    - name: Fetch CM host list
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v40/hosts"
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        return_content: yes
+      register: host_data
+
+    - name: Build CM hosts list
+      set_fact:
+        cm_hosts: "{{ cm_hosts | default([]) + [{
+            'hostname': item.hostname,
+            'hostId': item.hostId
+        }] }}"
+      loop: "{{ host_data.json['items'] }}"
+
+    - name: Extract cluster name
+      set_fact:
+        cluster_name: "{{ host_data.json['items'][0].clusterRef.clusterName }}"
+
+    #####################################################################
+    # 2. GET HIVE ROLES
+    #####################################################################
+    - name: Fetch Hive roles
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/hive_on_tez/roles"
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        return_content: yes
+      register: hive_roles
+
+    - name: Build Hive roles list
+      set_fact:
+        hive_roles_list: "{{ hive_roles_list | default([]) + [{
+            'roleName': item.name,
+            'roleType': item.type,
+            'hostname': item.hostRef.hostname,
+            'hostId': item.hostRef.hostId
+        }] }}"
+      loop: "{{ hive_roles.json['items'] }}"
+
+    #####################################################################
+    # 3. IDENTIFY ACTIVE HIVE SERVER2
+    #####################################################################
+    - name: Find current HiveServer2 role
+      set_fact:
+        active_hs2_role: "{{ item.roleName }}"
+        active_hs2_hostId: "{{ item.hostId }}"
+      loop: "{{ hive_roles_list }}"
+      when: item.roleType == "HIVESERVER2"
+
+    #####################################################################
+    # 4. SELECT A DIFFERENT HOST FOR STANDBY HS2
+    #####################################################################
+    - name: Pick different host for Standby HS2
+      set_fact:
+        standby_hs2_host: "{{ item }}"
+      loop: "{{ cm_hosts }}"
+      when: item.hostId != active_hs2_hostId
+
+    - name: Set standby HS2 HostId
+      set_fact:
+        standby_hs2_hostId: "{{ standby_hs2_host.hostId }}"
+
+    #####################################################################
+    # 5. STOP HIVE SERVICE
+    #####################################################################
+    - name: Stop Hive service
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/hive_on_tez/commands/stop"
+        method: POST
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+      register: stop_hive_output
+
+    #####################################################################
+    # 6. CREATE STANDBY HIVESERVER2 ROLE
+    #####################################################################
+    - name: Add new HiveServer2 role on standby host
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/hive_on_tez/roles"
+        method: POST
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        body_format: json
+        body:
+          items:
+            - type: "HIVESERVER2"
+              hostRef:
+                hostId: "{{ standby_hs2_hostId }}"
+      register: create_hs2_output
+
+    - name: Extract standby HS2 role
+      set_fact:
+        standby_hs2_role: "{{ create_hs2_output.json['items'][0].name }}"
+
+    #####################################################################
+    # 7. ENABLE HIVE HA SETTINGS
+    #####################################################################
+    - name: HiveServer2 HA information
+      debug:
+        msg: "HiveServer2 HA is automatically enabled when multiple HS2 roles exist in Hive-on-Tez."
+
+    #####################################################################
+    # 8. START HIVE SERVICE
+    #####################################################################
+    - name: Start Hive service
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/hive_on_tez/commands/start"
+        method: POST
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+      register: start_hive_output

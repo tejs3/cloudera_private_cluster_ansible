@@ -1,0 +1,154 @@
+---
+- name: Enable YARN RM-HA using CM REST API (Corrected + API v57)
+  hosts: cloudera_manager
+  gather_facts: no
+
+  vars:
+    cm_user: "{{ cloudera_manager_admin_username }}"
+    cm_pass: "{{ cloudera_manager_admin_password }}"
+    cm_host: "{{ inventory_hostname }}"
+    cm_port: 7183
+    validate_certs: false
+
+  tasks:
+
+    #####################################################################
+    # 1. GET HOSTS → hostname + hostId + cluster name
+    #####################################################################
+    - name: Fetch host list
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v40/hosts"
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        return_content: yes
+      register: host_data
+
+    - name: Build hostname → hostId list
+      set_fact:
+        cm_hosts: "{{ cm_hosts | default([]) + [{
+            'hostname': item.hostname,
+            'hostId': item.hostId
+          }] }}"
+      loop: "{{ host_data.json['items'] }}"
+
+    - name: Extract cluster name
+      set_fact:
+        cluster_name: "{{ host_data.json['items'][0].clusterRef.clusterName }}"
+
+    - debug:
+        msg:
+          - "Cluster Name → {{ cluster_name }}"
+          - "Detected Hosts → {{ cm_hosts }}"
+
+    #####################################################################
+    # 2. GET YARN ROLES USING API v57 (Correct hostId + hostname)
+    #####################################################################
+    - name: Fetch YARN roles (corrected API v57)
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/yarn/roles"
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        return_content: yes
+      register: yarn_roles
+
+    - name: Build YARN role list with hostId
+      set_fact:
+        yarn_roles_list: "{{ yarn_roles_list | default([]) + [{
+            'roleName': item.name,
+            'roleType': item.type,
+            'hostname': item.hostRef.hostname,
+            'hostId': item.hostRef.hostId
+          }] }}"
+      loop: "{{ yarn_roles.json['items'] }}"
+
+    #####################################################################
+    # 3. DETECT ACTIVE RESOURCE MANAGER
+    #####################################################################
+    - name: Identify active ResourceManager
+      set_fact:
+        active_rm_role: "{{ item.roleName }}"
+        active_rm_hostId: "{{ item.hostId }}"
+      loop: "{{ yarn_roles_list }}"
+      when: item.roleType == "RESOURCEMANAGER"
+
+    - debug:
+        msg:
+          - "Active RM Name → {{ active_rm_role }}"
+          - "Active RM HostId → {{ active_rm_hostId }}"
+
+    #####################################################################
+    # 4. CHOOSE STANDBY HOST (not the active RM host)
+    #####################################################################
+    - name: Pick a different host for Standby RM
+      set_fact:
+        standby_rm_host: "{{ item }}"
+      loop: "{{ cm_hosts }}"
+      when: item.hostId != active_rm_hostId
+
+    - name: Set Standby RM HostId
+      set_fact:
+        standby_rm_hostId: "{{ standby_rm_host.hostId }}"
+
+    - debug:
+        msg: "Standby RM will run on hostId → {{ standby_rm_hostId }}"
+
+    #####################################################################
+    # 5. STOP YARN SERVICE
+    #####################################################################
+    - name: Stop YARN
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/yarn/commands/stop"
+        method: POST
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+      register: yarn_stop_output
+
+    - debug:
+        msg: "YARN Stop Command Submitted → ID={{ yarn_stop_output.json.id }}"
+
+    #####################################################################
+    # 6. CREATE STANDBY RESOURCE MANAGER
+    #####################################################################
+    - name: Create Standby RM on new host
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/yarn/roles"
+        method: POST
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        body_format: json
+        body:
+          items:
+            - type: "RESOURCEMANAGER"
+              hostRef:
+                hostId: "{{ standby_rm_hostId }}"
+      register: rm_create_output
+
+    - debug:
+        msg:
+          - "Standby RM Created"
+          - "Role Name → {{ rm_create_output.json['items'][0].name }}"
+
+    #####################################################################
+    # 7. START YARN SERVICE
+    #####################################################################
+    - name: Start YARN
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/yarn/commands/start"
+        method: POST
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+      register: yarn_start_output
+
+    - debug:
+        msg: "YARN Start Command Submitted → ID={{ yarn_start_output.json.id }}"
+

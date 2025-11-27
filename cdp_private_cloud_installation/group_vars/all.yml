@@ -1,0 +1,232 @@
+# =========================
+# Database installation
+# =========================
+database_type: postgresql                       # Defines database type for CM and CDP services
+
+# =========================
+# Database configuration
+# =========================
+#database_default_password: alph4321                            # If we want to change the Default password for auto-created databases
+database_engine: postgresql                                     # Database engine to use (PostgreSQL/MySQL)
+database_version: 13                                            # Version of PostgreSQL used
+database_host: "{{ groups['cluster_master_nodes'] | first }}"   # Primary DB host from master group
+
+# =========================
+# Python configuration overrides
+# =========================
+ansible_python_interpreter: /usr/local/bin/python3.8      # Override default Python interpreter path
+python_pip_executable: /usr/local/bin/pip3                # Override pip executable path
+install_py3_psycopg2: true                                # Ensures psycopg2 (PostgreSQL driver) is installed
+ansible_python_interpreter: /usr/libexec/platform-python  # Default interpreter on RHEL 8 systems
+
+# =========================
+# Cloudera Manager configuration
+# =========================
+cloudera_manager_host: "{{ groups['cloudera_manager'] | first }}"                    # Defines CM server host
+cloudera_manager_version: "7.13.1"                                                   # Cloudera Manager version
+cloudera_manager_distro_name: "redhat"                                               # Operating system name
+cloudera_manager_distro_version: "8"                                                 # OS major version
+cloudera_archive_base_url: "https://archive.cloudera.com"                            # Base Cloudera repo URL
+cloudera_manager_repo_username: "e77768ed-1987-41fb-94c2-5cdf295599f5"               # Cloudera archive credentials
+cloudera_manager_repo_password: "2aed95ec605d"                                       # Password for repo authentication
+cloudera_manager_license_type: enterprise                                            # License type: enterprise or trial
+license_local_tmp_path: "/root/cdp_private_cloud_installation/cloudera_license.txt"  # Local path for CM license
+selinux_state: disabled                                                              # Disable SELinux to avoid service conflicts
+cloudera_manager_admin_username: "admin"                                             # CM web console username
+cloudera_manager_admin_password: "admin"                                             # CM web console password
+
+# =========================
+# Parcels configuration
+# =========================
+parcel_repos:
+  - "https://archive.cloudera.com/p/cdh7/7.3.1.0/parcels/"     # CDP parcel repository
+
+parcel_repo_username: "e77768ed-1987-41fb-94c2-5cdf295599f5"   # Parcel repo credentials
+parcel_repo_password: "2aed95ec605d"                           # Parcel repo password
+
+cluster:
+  repositories:
+    - "{{ parcel_repos[0] }}"                                  # Defines repo used by cluster
+
+# =========================
+# Cluster configuration
+# =========================
+#cluster_to_restart: "cdp-ansible"          # Used for restarts after config changes
+cluster_name: "cdp-ansible"                 # Cluster name
+update_services: true                       # Allow automatic service config updates
+
+
+clusters:
+  - name: "{{ cluster_name }}"              # Active cluster name
+    type: base                              # Cluster type
+    os_distribution: "el8"                  # OS distribution (RHEL 8)
+    repositories:
+      - "{{ parcel_repos[0] }}"             # Repo for parcels
+    services:                               # List of services to deploy
+      - HDFS                                # Hadoop Distributed File System
+      - YARN                                # Resource Management
+      - ZOOKEEPER                           # Coordination service
+      - HBASE                               # Distributed database
+      - PHOENIX                             # SQL layer on HBase
+      - HIVE                                # Data warehouse
+      - HUE                                 # Web interface for Hadoop
+      - QUEUEMANAGER                        # YARN Queue Management
+      - HIVE_ON_TEZ                         # Hive on Tez engine
+      - TEZ                                 # Optimized DAG execution engine
+      - INFRA_SOLR                          # Solr for audit/log indexing
+      - RANGER                              # Security and policy management
+      - OOZIE                               # Workflow scheduler
+      - KNOX                                # Secure gateway for Hadoop REST APIs
+    security:                              # Security configuration block (if needed)
+      kerberos: true                       # Enable Kerberos authentication
+
+    host_templates:
+      Master:
+        HDFS: [NAMENODE, SECONDARYNAMENODE, GATEWAY, DATANODE]   # Master node roles for HDFS
+        ZOOKEEPER: [SERVER]                                      # ZooKeeper server role
+        YARN: [RESOURCEMANAGER, JOBHISTORY, NODEMANAGER]         # Resource and job management roles
+        HBASE: [MASTER, REGIONSERVER]                            # HBase master and regionserver
+        PHOENIX: [PHOENIX_QUERY_SERVER]                          # Phoenix SQL service
+        HIVE: [GATEWAY, HIVEMETASTORE]                           # Hive metadata and gateway
+        HUE: [HUE_SERVER]                                        # HUE server role
+        INFRA_SOLR: [SOLR_SERVER]                                # Solr server for Ranger logs
+        RANGER: [RANGER_ADMIN]                                   # Ranger admin console
+        TEZ: [GATEWAY]                                           # Tez gateway role
+        HIVE_ON_TEZ: [GATEWAY, HIVESERVER2]                      # HiveServer2 on Tez
+        QUEUEMANAGER: [QUEUEMANAGER_STORE, QUEUEMANAGER_WEBAPP]  # QueueManager services
+        OOZIE: [OOZIE_SERVER]                                    # Oozie workflow scheduler
+        KNOX: [KNOX_GATEWAY]                                     # Knox Gateway service
+
+      Worker:
+        HDFS: [DATANODE, GATEWAY]                                # DataNode role for workers
+        ZOOKEEPER: [SERVER]                                      # ZooKeeper server
+        YARN: [NODEMANAGER]                                      # NodeManager for YARN
+        HBASE: [REGIONSERVER]                                    # HBase regionserver
+        PHOENIX: [PHOENIX_QUERY_SERVER]                          # Phoenix SQL service
+        HIVE: [GATEWAY]                                          # Hive Gateway
+        TEZ: [GATEWAY]                                           # Tez Gateway
+        HIVE_ON_TEZ: [GATEWAY]                                   # Hive on Tez gateway
+        HUE: [HUE_LOAD_BALANCER]                                 # HUE load balancer for HA
+        RANGER: [RANGER_TAGSYNC, RANGER_USERSYNC]                # Ranger background sync services
+
+service_configs:
+  INFRA_SOLR:
+    INFRA_SOLR_SERVER:
+      solr_datadir: /var/lib/solr/data       # Solr data directory
+      solr_heap: 1024                        # Solr heap size in MB
+      solr_port: 8983                        # Solr listening port
+
+# =========================
+# Management Services
+# =========================
+mgmt:
+  services:
+    - HOSTMONITOR                            # Collects metrics from cluster nodes
+    - SERVICEMONITOR                         # Monitors service status
+    - EVENTSERVER                            # Logs and events handler
+    - ALERTPUBLISHER                         # Sends CM alerts/notifications
+    - REPORTSMANAGER                         # Generates CM usage reports
+
+# =========================
+# Kerberos / FreeIPA Configuration
+# =========================
+#freeipa_enroll: true                        # Enroll client automatically to FreeIPA
+#freeipa_autodns: true                       # Enable autodiscovery of DNS for FreeIPA
+#use_sssd_for_enumeration: true              # Use SSSD for user/group lookup
+ipaclient_principal: admin                   # IPA admin principal name
+ipaclient_password: Alph@1234                # IPA admin password
+ipaclient_servers:
+  - ldapnode.infra.alephys.com               # IPA/KDC server hostname
+dns_search_domains:
+  - infra.alephys.com                        # DNS domain for cluster
+ipaclient_force_join: yes                    # Force IPA re-enrollment if already joined
+
+security:
+  enable_kerberos: true                     # Enable Kerberos authentication (uncomment to use)
+  enable_ldap: true                         # Enable LDAP integration (uncomment to use)
+
+krb5_kdc_type: 'Red Hat IPA'                 # Specifies KDC type
+krb5_domain: infra.alephys.com               # Kerberos domain name
+krb5_kdc_host: ldapnode.infra.alephys.com    # KDC host address
+krb5_realm: ALEPHYS.COM                      # Kerberos realm name
+krb5_enc_types: "aes256-cts"                 # Encryption type used for tickets
+krb5_kdc_admin_user: admin                   # KDC admin username
+krb5_kdc_admin_password: "Alph@1234"         # KDC admin password
+ipaadmin_password: "Alph@1234"               # IPA admin password
+use_sssd_for_enumeration: true               # Use SSSD for user enumeration
+use_sssd_for_enurmeration: true              # (Duplicate variable; can be removed safely)
+krb5_kdc_active_directory_set_encryption_types: false   # Skip encryption sync with AD
+krb5_kdc_active_directory_delete_on_regenerate: false   # Keep keytabs on regeneration
+
+#krb5_kdc_active_directory_prefix: ""         # Prefix for AD account creation
+#krb5_kdc_active_directory_suffix: ""         # Suffix for AD account creation
+#krb5_kdc_account_creation_host_override: ""  # Optional override for host creation
+#krb5_keytab_retrieval_script: ""             # Script to retrieve keytabs (optional)
+
+# ======================================================
+# AUTO-TLS CONFIGURATION
+# ======================================================
+sudoerUser: "root"                          # Sudo user to perform secure operations
+freeipa_activated: false                    # Enable integration with FreeIPA CA
+node_password: "4lph@123"                   # Password fallback for secure node access
+
+# =========================
+# Cloudera Manager Web UI External Authentication Configuration
+# =========================
+
+cloudera_manager_external_auth:
+  external_only: false                             # Allow both local and external auth
+  external_first: true                             # Try external (LDAP) authentication first
+
+# =========================
+# FreeIPA / LDAP Integration Details for CM
+# =========================
+
+ipa_ldap_url: ldap://ldapnode.infra.alephys.com:389       # IPA LDAP endpoint
+ipa_directory_manager: ""                                 # Directory Manager DN (optional)
+ipadm_password: Alph@1234                                 # Directory Manager password
+ipa_admin_user: admin                                     # FreeIPA admin user
+ipaadmin_password: Alph@1234                              # FreeIPA admin password
+ipa_admins_group: ipausers                                # Default admin group in IPA
+ipa_ldap_dc_suffix: ""                                    # Optional DN suffix override
+ipa_ldap_user_bind_dn: uid=admin,cn=users,cn=accounts,dc=alephys,dc=com   # User bind DN
+ipa_ldap_user_bind_password: Alph@1234                    # Password for LDAP user bind DN
+ipa_ldap_user_search_base: cn=users,cn=accounts,dc=alephys,dc=com         # Base DN for user searches
+ipa_ldap_user_search_filter: "(uid={0})"                  # Search filter for user lookup
+ipa_ldap_group_search_base: cn=ipausers,cn=groups,cn=accounts,dc=alephys,dc=com  # Base DN for group search
+ipa_ldap_user_group_filter: (objectClass=groupOfNames)    # Filter to identify valid LDAP groups
+
+# =========================
+# LDAP / FreeIPA Authentication Details
+# =========================
+
+# Defines which authentication provider CM and cluster services use
+service_auth_provider: ldap
+
+# Define available authentication providers (LDAP in this case)
+auth_providers:
+  ldap:
+    type: LDAP                                      # Authentication provider type
+    ldap_attribute:                                 # LDAP attribute mappings
+      member: member                               # LDAP attribute for group membership
+      group: cn                                    # LDAP attribute for group name
+      user: uid                                    # LDAP attribute for username
+      user_member: memberUid                       # Attribute linking users to groups
+    ldap_object_class:                             # LDAP object class definitions
+      group: posixgroup                            # Object class for groups in FreeIPA
+      user: person                                 # Object class for users
+    ldap_search_base:                              # Base DNs for LDAP searches
+      group: cn=groups,cn=accounts,dc=alephys,dc=com   # Base DN for group lookups
+      user: cn=users,cn=accounts,dc=alephys,dc=com     # Base DN for user lookups
+    ldap_bind_user_dn: uid=admin,cn=users,cn=accounts,dc=alephys,dc=com  # Bind DN for LDAP auth
+    ldap_bind_password: "Alph@1234"                # Password for bind user
+    ldap_url: ldap://ldapnode.infra.alephys.com:389 # LDAP server URL
+    ldap_cert: ""                                  # Path to LDAP certificate (if using LDAPS)
+
+# Whether to use StartTLS to encrypt LDAP connections
+use_start_tls: true
+
+
+
+
+

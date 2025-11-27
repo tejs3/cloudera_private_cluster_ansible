@@ -1,0 +1,24 @@
+all:
+  vars:
+    ansible_user: root
+    ansible_python_interpreter: /usr/bin/python3
+  hosts:
+    krishnanode1.infra.alephys.com:
+      ansible_host: 10.1.14.174
+    krishnanode2.infra.alephys.com:
+      ansible_host: 10.1.14.223
+    krishnanode3.infra.alephys.com:
+      ansible_host: 10.1.14.165
+
+  children:
+    prometheus_server:
+      hosts:
+        krishnanode1.infra.alephys.com:
+        krishnanode2.infra.alephys.com:
+        krishnanode3.infra.alephys.com:
+    node_exporters:
+      hosts:
+        krishnanode1.infra.alephys.com:
+        krishnanode2.infra.alephys.com:
+        krishnanode3.infra.alephys.com:
+

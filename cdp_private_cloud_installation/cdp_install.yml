@@ -1,0 +1,78 @@
+#######################################################################################################
+#  CDP Cluster Deployment Playbook
+# Description:
+#   - Configures Cloudera Manager (CM), Agents, and Cluster Nodes
+#   - Sets up Kerberos integration (FreeIPA or external KDC)
+#   - Enables Auto-TLS and external authentication
+#   - Deploys and validates CDP cluster services
+#######################################################################################################
+
+# ------------------------------------------------------------
+# Step 1: Configure CM, Agents, and Cluster Nodes
+# ------------------------------------------------------------
+- name: Configure CM, agents, and deploy cluster
+  hosts: cluster_master_nodes, cluster_worker_nodes
+  collections:
+    - cloudera.cluster.prereqs
+    - cloudera.cluster.cloudera_manager
+    - cloudera.cluster.infrastructure
+    - cloudera.cluster.deployment
+
+  roles:
+    # ---------- BASE SYSTEM AND PREREQUISITES ---------
+    - prereqs/os                         # Apply OS-level tuning (limits, selinux, packages)
+    - prereqs/jdk                        # Install Java JDK (required for CM and services)
+
+    # ---------- CM AGENT SETUP ----------
+    - cloudera_manager/repo              # Configure Cloudera Manager repository
+    - cloudera_manager/agent             # Install and configure Cloudera Manager Agent
+    - cloudera_manager/daemons           # Start required CM daemons
+
+    # ---------- INFRASTRUCTURE ----------
+    - cloudera_manager/license           # Apply Cloudera license file for cluster
+
+    # ---------- KERBEROS CONFIGURATION ----------
+    # 1. Installs Kerberos client packages and FreeIPA dependencies
+    - prereqs/kerberos
+    # 2. Configures krb5.conf and joins nodes to FreeIPA/KDC using freeipa.ansible_freeipa.ipaclient
+    - infrastructure/krb5_client
+
+
+# ------------------------------------------------------------
+# Step 2: Cloudera Manager Server Setup (Master Node)
+# ------------------------------------------------------------
+- name: Setup CM server and license on master nodes
+  hosts: cluster_master_nodes
+  roles:
+    # ---------- DATABASE AND CM SERVER ----------
+    - infrastructure/rdbms               # Sets up and configures the backend database (PostgreSQL/MySQL)
+    - prereqs/postgresql_connector       # Installs JDBC connector for PostgreSQL
+    - cloudera_manager/server            # Installs and configures Cloudera Manager Server
+    - cloudera_manager/common
+    - cloudera_manager/license           # Apply Cloudera license again at server level (required for CM API)
+
+    # ---------- INVENTORY AND VALIDATION ----------
+    #- verify/inventory                   # Validates Ansible inventory and host groups
+    #- verify/definition                  # Ensures deployment definition consistency
+    - verify/parcels_and_roles           # Verifies parcel repositories and role mappings
+
+    # ---------- CLUSTER DEFINITION AND API SETUP ----------
+    - deployment/definition              # Defines cluster layout and configurations
+    - cloudera_manager/api_hosts         # Registers cluster nodes with CM via API
+    - cloudera_manager/hosts_config      # Pushes host-level configs (memory, disks, etc.)
+    - cloudera_manager/config            # Applies CM-level global configuration
+    - cloudera_manager/api_client
+    - config/services/mgmt               # Configures CM Management Services
+
+    # ---------- KERBEROS AND SECURITY ----------
+    - cloudera_manager/kerberos          # Configures Kerberos in CM (realm, admin, keytabs)
+    - cloudera_manager/autotls           # Enables AutoTLS across CM and cluster services
+    - cloudera_manager/external_auth     # Integrates LDAP/FreeIPA for external authentication
+
+    # ---------- ADDITIONAL SERVICES ----------
+    - config/services/oozie_ui           # Configures Oozie Web UI and integration
+
+    # ---------- FINAL CLUSTER DEPLOYMENT ----------
+    - deployment/services/mgmt           # Deploys CM management roles
+    - deployment/cluster                 # Deploys the CDP cluster with defined services
+

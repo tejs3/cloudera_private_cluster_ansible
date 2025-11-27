@@ -1,0 +1,135 @@
+---
+- name: Enable Hive Metastore HA using CM REST API (service=hive)
+  hosts: cloudera_manager
+  gather_facts: no
+
+  vars:
+    cm_user: "{{ cloudera_manager_admin_username }}"
+    cm_pass: "{{ cloudera_manager_admin_password }}"
+    cm_host: "{{ inventory_hostname }}"
+    cm_port: 7183
+
+  tasks:
+    #####################################################################
+    # 1. Get CM Hosts
+    #####################################################################
+    - name: Fetch CM host list
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v40/hosts"
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        return_content: yes
+      register: host_data
+
+    - name: Build CM hosts list
+      set_fact:
+        cm_hosts: "{{ cm_hosts | default([]) + [{
+            'hostname': item.hostname,
+            'hostId': item.hostId
+        }] }}"
+      loop: "{{ host_data.json['items'] }}"
+
+    - name: Extract cluster name
+      set_fact:
+        cluster_name: "{{ host_data.json['items'][0].clusterRef.clusterName }}"
+
+    #####################################################################
+    # 2. GET Hive roles from service=hive
+    #####################################################################
+    - name: Fetch Hive roles
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/hive/roles"
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        return_content: yes
+      register: hive_roles
+
+    - name: Build Hive roles list
+      set_fact:
+        hive_roles_list: "{{ hive_roles_list | default([]) + [{
+            'roleName': item.name,
+            'roleType': item.type,
+            'hostname': item.hostRef.hostname,
+            'hostId': item.hostRef.hostId
+        }] }}"
+      loop: "{{ hive_roles.json['items'] }}"
+
+    #####################################################################
+    # 3. Identify existing Hive Metastore Server
+    #####################################################################
+    - name: Identify active Hive Metastore Server
+      set_fact:
+        active_hms_role: "{{ item.roleName }}"
+        active_hms_hostId: "{{ item.hostId }}"
+      loop: "{{ hive_roles_list }}"
+      when: item.roleType == "HIVEMETASTORE"
+
+    #####################################################################
+    # 4. Select different host for standby HMS
+    #####################################################################
+    - name: Choose a second host for Metastore HA
+      set_fact:
+        standby_hms_host: "{{ item }}"
+      loop: "{{ cm_hosts }}"
+      when: item.hostId != active_hms_hostId
+
+    - name: Set standby HMS hostId
+      set_fact:
+        standby_hms_hostId: "{{ standby_hms_host.hostId }}"
+
+    #####################################################################
+    # 5. STOP Hive service
+    #####################################################################
+    - name: Stop Hive service
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/hive/commands/stop"
+        method: POST
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+      register: stop_hive_output
+
+    #####################################################################
+    # 6. ADD STANDBY Hive Metastore Server
+    #####################################################################
+    - name: Add new Hive Metastore role
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/hive/roles"
+        method: POST
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        body_format: json
+        body:
+          items:
+            - type: "HIVEMETASTORE"
+              hostRef:
+                hostId: "{{ standby_hms_hostId }}"
+      register: create_hms_output
+
+    #####################################################################
+    # 7. HMS HA Info (no special config needed)
+    #####################################################################
+    - name: HMS HA information
+      debug:
+        msg: "Hive Metastore HA is automatically enabled when multiple HIVEMETASTORE roles exist."
+
+    #####################################################################
+    # 8. Start Hive Service
+    #####################################################################
+    - name: Start Hive service
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/hive/commands/start"
+        method: POST
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+      register: start_hive_output
+

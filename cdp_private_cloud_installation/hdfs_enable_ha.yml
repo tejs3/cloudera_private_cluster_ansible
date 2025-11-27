@@ -1,0 +1,160 @@
+---
+- name: Enable HDFS HA automatically using CM REST API
+  hosts: cloudera_manager
+  gather_facts: no
+
+  vars:
+    cm_user: "{{ cloudera_manager_admin_username }}"
+    cm_pass: "{{ cloudera_manager_admin_password }}"
+    cm_host: "{{ inventory_hostname }}"
+    cm_port: 7183
+    validate_certs: false
+#    cluster_name: "cdp-ansible1"
+
+  tasks:
+
+    #####################################################################
+    # 1. GET CM HOSTS → hostname + hostId
+    #####################################################################
+    - name: Get host list from Cloudera Manager
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v40/hosts"
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        return_content: yes
+      register: host_data
+
+    - name: Build hostname→hostId mapping
+      set_fact:
+        cm_hosts: "{{ cm_hosts | default([]) + [ {
+              'hostname': item.hostname,
+              'hostId': item.hostId
+            } ] }}"
+      loop: "{{ host_data.json['items'] }}"
+
+    - name: Extract cluster name from host list
+      set_fact:
+        cluster_name: "{{ host_data.json['items'][0].clusterRef.clusterName }}"
+
+    - debug:
+        msg:
+          - "Hosts detected → {{ cm_hosts }}"
+          - "Cluster Name → {{ cluster_name }}"
+
+    #####################################################################
+    # 2. SELECT FIRST 3 HOSTS AS JOURNALNODES
+    #####################################################################
+    - name: Select first 3 hosts to become JournalNodes
+      set_fact:
+        jn_hosts: "{{ cm_hosts[:3] }}"
+    #if we want n number journalnodes then we need to give the n in the place of jn_hosts: "{{ cm_hosts[:n] }}"
+
+    - name: Build JN list for HA payload
+      set_fact:
+        jn_list: "{{ jn_list | default([]) + [
+          {
+            'jnHostId': item.hostId,
+            'jnEditsDir': '/dfs/jn' ~ (index + 1)
+          }
+        ] }}"
+      loop: "{{ jn_hosts }}"
+      loop_control:
+        index_var: index
+
+    - debug:
+        msg: "JournalNodes (3 only) → {{ jn_list }}"
+
+    #####################################################################
+    # 3. GET HDFS ROLES → detect active NN
+    #####################################################################
+    - name: Get HDFS roles from CM
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v40/clusters/{{ cluster_name }}/services/hdfs/roles"
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        return_content: yes
+      register: hdfs_roles
+
+    - name: Build HDFS role list
+      set_fact:
+        hdfs_roles_list: "{{ hdfs_roles_list | default([]) + [
+          {
+            'roleName': item.name,
+            'roleType': item.type,
+            'hostId': item.hostRef.hostId,
+            'hostname': item.hostRef.hostname
+          }
+        ] }}"
+      loop: "{{ hdfs_roles.json['items'] }}"
+
+    #####################################################################
+    # 4. EXTRACT ACTIVE NN + STANDBY NN
+    #####################################################################
+
+    - name: Detect Active NameNode (runs on node1)
+      set_fact:
+        active_nn_role: "{{ item.roleName }}"
+        active_nn_hostId: "{{ item.hostId }}"
+      loop: "{{ hdfs_roles_list }}"
+      when: item.roleType == "NAMENODE" and item.hostname == "krishnanode1.infra.alephys.com"
+
+    - name: Select Standby NameNode host (any host != activeNN)
+      set_fact:
+        standby_candidate_host: "{{ item }}"
+      loop: "{{ cm_hosts }}"
+      when: item.hostId != active_nn_hostId
+      register: standby_candidates_raw
+
+    - name: Set Standby NN (use first non-activeNN host)
+      set_fact:
+        standby_nn_hostId: "{{ standby_candidate_host.hostId }}"
+        standby_nn_hostname: "{{ standby_candidate_host.hostname }}"
+
+    - name: Find Standby NN roleName (existing NN2)
+      set_fact:
+        standby_nn_role: "nn2"
+
+    #####################################################################
+    # 5. DEBUG OUTPUT
+    #####################################################################
+    - debug:
+        msg:
+          - "Active NN Role    = {{ active_nn_role }}"
+          - "Active NN HostId  = {{ active_nn_hostId }}"
+          - "Standby NN Role   = {{ standby_nn_role }}"
+          - "Standby NN HostId = {{ standby_nn_hostId }}"
+          - "JournalNodes      = {{ jn_list }}"
+
+    #####################################################################
+    # 6. ENABLE HDFS HA USING REST API
+    #####################################################################
+    - name: Submit HA Enable Command
+      uri:
+        url: "https://{{ cm_host }}:{{ cm_port }}/api/v57/clusters/{{ cluster_name }}/services/hdfs/commands/hdfsEnableNnHa"
+        method: POST
+        user: "{{ cm_user }}"
+        password: "{{ cm_pass }}"
+        force_basic_auth: yes
+        validate_certs: no
+        body_format: json
+        body:
+          activeNnName: "{{ active_nn_role }}"
+          standbyNnName: "{{ standby_nn_role }}"
+          standbyNnHostId: "{{ standby_nn_hostId }}"
+          standbyNameDirList: ["/dfs/nn2"]
+          nameservice: "nameservice1"
+          qjName: "qjournal1"
+          activeFcName: "fc1"
+          standbyFcName: "fc2"
+          jns: "{{ jn_list }}"
+          forceInitZNode: true
+          clearExistingStandbyNameDirs: true
+          clearExistingJnEditsDir: true
+      register: ha_output
+
+    - debug:
+        msg: "{{ ha_output.json }}"
