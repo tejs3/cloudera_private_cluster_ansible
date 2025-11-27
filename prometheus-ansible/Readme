@@ -27,7 +27,6 @@ The goal of this module is to provide a consistent, repeatable, and enterprise-r
 ├── hosts/ # Inventory files (cluster nodes)
 ├── group_vars/ # Group-level configuration
 ├── playbooks/ # Prometheus and exporter playbooks
-├── templates/ # prometheus.yml and service templates
 └── README.md
 
 
